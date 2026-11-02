@@ -17,15 +17,14 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.time.Clock
 
 // Reproduces the ProChan app's /api/android/ request signing for a guest with no account.
-// A fresh device registers an EC public key under an HMAC signature keyed by the app's static
-// secret; every later read is signed with that device's own key.
+// Updated to fix HTTP 426 Upgrade Required errors by bumping version and user agents.
 object ProChanSigner {
-    const val READ_UA = "ProChanAndroid/2.1"
+    const val READ_UA = "ProChanAndroid/2.2"
 
-    private const val DEVICE_UA = "ProChanAndroid/2.0"
+    private const val DEVICE_UA = "ProChanAndroid/2.1"
     private const val CLIENT = "android-app"
-    private const val VERSION = "93"
-    private const val DEVICE_INFO = "Google Pixel 7; Android 14; sdk 34"
+    private const val VERSION = "95"
+    private const val DEVICE_INFO = "Google Pixel 8; Android 14; sdk 34"
     private const val PACKAGE = "com.prochan.android"
     private const val OBFUSCATION = "prochan-hmac-obf-static-v2"
     private const val BLOB_HEX =
