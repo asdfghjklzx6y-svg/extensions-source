@@ -209,10 +209,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd repo
-          # إذا كان الفرع repo غير موجود محلياً، قم بإنشائه كفرع فارغ نظيف
-          if ! git rev-parse --verify origin/repo >/dev/null 2>&1; then
-            git checkout --orphan repo
-            git rm -rf . || true
+          RESET_BRANCH=false
+          # If the repo branch is missing, or has no index.json (it holds source files / is dirty),
+          # start over from a clean orphan branch
+          if ! git rev-parse --verify origin/repo >/dev/null 2>&1 || [ ! -f index.json ]; then
+            echo "index.json not found - resetting repo branch to a clean orphan branch"
+            RESET_BRANCH=true
+            git checkout --orphan repo-clean
+            git rm -rf . >/dev/null 2>&1 || true
+            git clean -fdx
           fi
           python -m pip install --user --upgrade protobuf
           python -u ../main/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA" "$FULL_REBUILD"
@@ -222,7 +227,11 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "Update extensions repo"
-            git push origin repo
+            if [ "$RESET_BRANCH" = "true" ]; then
+              git push --force origin HEAD:repo
+            else
+              git push origin repo
+            fi
           else
             echo "No changes to commit"
           fi
