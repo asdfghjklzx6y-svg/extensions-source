@@ -222,6 +222,11 @@ jobs:
             echo '[]' > index.json
             mkdir -p apk icon
           fi
+          
+          # Point the hard-coded upstream repo safely to the user's repository using perl
+          find ../main/.github/scripts -type f -print0 \
+            | xargs -0 -r perl -pi -e "s#keiyoushi/extensions#$GITHUB_REPOSITORY#g"
+          
           python -m pip install --user --upgrade protobuf
           python -u ../main/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA" "$FULL_REBUILD"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
