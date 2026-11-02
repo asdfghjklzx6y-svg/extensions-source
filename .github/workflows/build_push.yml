@@ -210,14 +210,17 @@ jobs:
         run: |
           cd repo
           RESET_BRANCH=false
-          # If the repo branch is missing, or has no index.json (it holds source files / is dirty),
-          # start over from a clean orphan branch
-          if ! git rev-parse --verify origin/repo >/dev/null 2>&1 || [ ! -f index.json ]; then
-            echo "index.json not found - resetting repo branch to a clean orphan branch"
+          # No index.json = not a valid extension repo (e.g. branch holds source files).
+          # Start from a clean orphan branch and seed an empty index.json,
+          # because publish-repo.py reads index.json before anything else.
+          if [ ! -f index.json ]; then
+            echo "index.json not found - creating a clean orphan branch"
             RESET_BRANCH=true
             git checkout --orphan repo-clean
             git rm -rf . >/dev/null 2>&1 || true
             git clean -fdx
+            echo '[]' > index.json
+            mkdir -p apk icon
           fi
           python -m pip install --user --upgrade protobuf
           python -u ../main/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA" "$FULL_REBUILD"
