@@ -104,7 +104,7 @@ jobs:
           MODULES+=(":${extension//\//:}")
           TASKS=()
           for module in "${MODULES[@]}"; do
-            TASKS+=("${module}:assembleRelease" "${module}:lintRelease")
+            TASKS+=("${module}:spotlessApply" "${module}:assembleRelease" "${module}:lintRelease")
           done
           ./gradlew "${TASKS[@]}"
 
@@ -150,7 +150,7 @@ jobs:
         run: |
           TASKS=()
           for module in $MODULES; do
-            TASKS+=("${module}:assembleRelease")
+            TASKS+=("${module}:spotlessApply" "${module}:assembleRelease")
           done
           ./gradlew "${TASKS[@]}"
 
