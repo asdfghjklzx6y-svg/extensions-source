@@ -17,7 +17,9 @@ on:
         type: boolean
         default: false
 
-permissions: {}
+permissions:
+  contents: write
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}
@@ -51,7 +53,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FULL_REBUILD: ${{ inputs.full_rebuild }}
         run: |
-          # Empty tree: every module is diffed as new, so everything gets rebuilt
           empty_tree=$(git hash-object -t tree /dev/null)
           if [ "$FULL_REBUILD" = "true" ]; then
             sha=$empty_tree
@@ -83,7 +84,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
-          java-version: 25
+          java-version: 17
           distribution: temurin
 
       - name: Set up Gradle
@@ -99,11 +100,8 @@ jobs:
               MODULES+=(":${dir}:$(basename "$(dirname "$build_file")")")
             done
           done
-
-          # One extension, so that what only extension builds need is cached too
           extension=$(find src -mindepth 2 -maxdepth 2 -type d | sort | head -n 1)
           MODULES+=(":${extension//\//:}")
-
           TASKS=()
           for module in "${MODULES[@]}"; do
             TASKS+=("${module}:assembleRelease" "${module}:lintRelease")
@@ -127,7 +125,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
-          java-version: 25
+          java-version: 17
           distribution: temurin
 
       - name: Set up Gradle
@@ -137,14 +135,18 @@ jobs:
 
       - name: Prepare signing key
         run: |
-          echo ${{ secrets.SIGNING_KEY }} | base64 -d > signingkey.jks
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "${{ secrets.SIGNING_KEY }}" | base64 -d > signingkey.jks
+          else
+            keytool -genkeypair -alias androiddebugkey -keypass android -keystore signingkey.jks -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
 
       - name: Build extensions (${{ matrix.chunk.number }})
         env:
           MODULES: ${{ join(matrix.chunk.modules, ' ') }}
-          ALIAS: ${{ secrets.ALIAS }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS || 'androiddebugkey' }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
         run: |
           TASKS=()
           for module in $MODULES; do
@@ -154,7 +156,6 @@ jobs:
 
       - name: Upload APKs (${{ matrix.chunk.number }})
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: "github.repository == 'keiyoushi/extensions-source'"
         with:
           name: "individual-apks-${{ matrix.chunk.number }}"
           path: |
@@ -165,19 +166,16 @@ jobs:
 
       - name: Clean up CI files
         if: always()
-        run: rm signingkey.jks
+        run: rm -f signingkey.jks
 
   publish:
     name: Publish extension repo
     needs: [prepare, build-extensions]
-    # Run whenever there's anything to publish, new/changed builds OR only deletions
     if: >-
       always() &&
-      github.repository == 'keiyoushi/extensions-source' &&
       needs.prepare.result == 'success' &&
       needs.build-extensions.result != 'failure' &&
-      needs.build-extensions.result != 'cancelled' &&
-      needs.prepare.outputs.delete != '[]'
+      needs.build-extensions.result != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -197,30 +195,34 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: keiyoushi/extensions
-          token: ${{ secrets.BOT_PAT }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           ref: repo
           path: repo
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Publish and deploy repo
         env:
           DELETE: ${{ needs.prepare.outputs.delete }}
           FULL_REBUILD: ${{ needs.prepare.outputs.full_rebuild }}
-          GH_TOKEN: ${{ secrets.BOT_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd repo
+          # إذا كان الفرع repo غير موجود محلياً، قم بإنشائه كفرع فارغ نظيف
+          if ! git rev-parse --verify origin/repo >/dev/null 2>&1; then
+            git checkout --orphan repo
+            git rm -rf . || true
+          fi
           python -m pip install --user --upgrade protobuf
           python -u ../main/.github/scripts/publish-repo.py "$DELETE" "$GITHUB_SHA" "$FULL_REBUILD"
-          git config --global user.email "156378334+keiyoushi-bot@users.noreply.github.com"
-          git config --global user.name "keiyoushi-bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           git status
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "Update extensions repo"
-            git push
-            curl https://purge.jsdelivr.net/gh/keiyoushi/extensions@repo/index.json
-            curl https://purge.jsdelivr.net/gh/keiyoushi/extensions@repo/index.pb
+            git push origin repo
           else
             echo "No changes to commit"
           fi
