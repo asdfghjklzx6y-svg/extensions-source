@@ -120,3 +120,4 @@ object ProChanSigner {
 
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
 }
+
